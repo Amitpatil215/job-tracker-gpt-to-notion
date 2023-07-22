@@ -6,6 +6,7 @@ import promts as promts
 import openai
 import traceback
 import os
+import logging
 
 from model.entry import Entry
 from model.page import Page
@@ -14,11 +15,28 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-openai.api_key =os.getenv('openAiAPIKEY')
+openai.api_key = os.getenv('openAiAPIKEY')
 
 token = os.getenv('notionToken')
 jobDBdatabaseID = os.getenv('jobDBdatabaseID')
-rawDatabaseID =os.getenv('rawDatabaseID')
+rawDatabaseID = os.getenv('rawDatabaseID')
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
+# create console handler and set level to debug
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+# create formatter
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# add formatter to ch
+ch.setFormatter(formatter)
+
+# add ch to logger
+logger.addHandler(ch)
 
 headers = {
     "Authorization": "Bearer " + token,
@@ -32,8 +50,6 @@ def getFormatedJSONFromChatGPT(rawJobDescription, jobPostingUrl):
     chat_completion = openai.ChatCompletion.create(
         model="gpt-3.5-turbo", messages=[{"role": "system", "content": "You are a job seeker and want to extract info from raw job description,"}, {"role": "user", "content": promts.get_promt(rawJobDescription, jobPostingUrl)},])
 
-    # print the chat completion
-    # print(chat_completion.choices[0].message.content)
     gptJsonResponse = chat_completion.choices[0].message.content
 
     decodedGptJsonResponse = json.loads(gptJsonResponse)
@@ -45,14 +61,6 @@ def getFormatedJSONFromChatGPT(rawJobDescription, jobPostingUrl):
     platform = decodedGptJsonResponse["platform"]
     salary = decodedGptJsonResponse["salary"]
     experience = decodedGptJsonResponse["experience"]
-
-    # Printing the parsed data
-    print("Name:", name)
-    print("Location:", location)
-    print("Job Title:", job_title)
-    print("Platform:", platform)
-    print("Salary:", salary)
-    print("Experience:", experience)
 
     entry = Entry(
         id="",
@@ -118,7 +126,6 @@ def getCompleteDatabse(databaseID, headers):
         rawDataString = ""
         rawDataList = p.properties["Raw Data"]["rich_text"]
         for rawData in rawDataList:
-            print(rawData["text"]["content"])
             rawDataString += rawData["text"]["content"]
 
         rawData = RawData(
@@ -132,10 +139,8 @@ def getCompleteDatabse(databaseID, headers):
 # Create a Page
 
 
+# returns status code
 def createPage(databaseID, headers, entry):
-    print("Creating a page")
-    print(entry.__dict__)
-
     createUrl = 'https://api.notion.com/v1/pages'
     newPageData = {
         "parent": {"database_id": databaseID},
@@ -232,22 +237,22 @@ def createPage(databaseID, headers, entry):
     }
     data = json.dumps(newPageData)
     res = requests.request("POST", createUrl, headers=headers, data=data)
-    print(res.status_code)
-    print(res.text)
+    if (res.status_code == 200):
+        logger.debug('Created page having company name: ' + entry.name)
+    else:
+        logger.debug('Error in creating page, response from api: '+res.text)
+    return res.status_code
 
 
-def deletePage(pageId, headers, entry):
-    print(entry.__dict__)
-
-    createUrl = f'https://api.notion.com/v1/pages/{pageId}'
+def deletePage(headers, entry):
+    createUrl = f'https://api.notion.com/v1/pages/{entry.id}'
     archivedPage = {
         "archived": True
     }
     data = json.dumps(archivedPage)
     res = requests.request("PATCH", createUrl, headers=headers, data=data)
-    print(res.status_code)
-    print(res.text)
-    print("Page Deleted")
+    if (res.status_code == 200):
+        logger.debug('Deleted page having company name: '+entry.name)
 
 
 def execute():
@@ -271,12 +276,16 @@ def execute():
                 status="New"
             )
             # Adding a new entry to the database
-            createPage(jobDBdatabaseID, entry=formatedEntry, headers=headers)
+            createPageStatusCode = createPage(
+                jobDBdatabaseID, entry=formatedEntry, headers=headers)
             # Deleting the entry from raw database
-            deletePage(pageId=row.id, headers=headers, entry=formatedEntry)
+            # if(createPageStatusCode==200):
+            #     deletePage(headers=headers, entry=formatedEntry)
         except:
-            print("Error in parsing")
+            logger.debug('Error in executing the script for url ->' +
+                         row.url + " Continueing with next url if available")
             traceback.print_exc()
             continue
+
 
 execute()
