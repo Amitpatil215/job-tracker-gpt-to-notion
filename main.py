@@ -279,8 +279,8 @@ def execute():
             createPageStatusCode = createPage(
                 jobDBdatabaseID, entry=formatedEntry, headers=headers)
             # Deleting the entry from raw database
-            # if(createPageStatusCode==200):
-            #     deletePage(headers=headers, entry=formatedEntry)
+            if(createPageStatusCode==200):
+                deletePage(headers=headers, entry=formatedEntry)
         except:
             logger.debug('Error in executing the script for url ->' +
                          row.url + " Continueing with next url if available")
