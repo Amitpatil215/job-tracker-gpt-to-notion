@@ -13,7 +13,8 @@
 
 
 class Entry:
-    def __init__(self, name, location, job_title, platform, salary, experience, type, url, status):
+    def __init__(self, id, name, location, job_title, platform, salary, experience, type, url, status):
+        self.id = id
         self.name = name
         self.location = location
         self.job_title = job_title
@@ -23,3 +24,15 @@ class Entry:
         self.type = type
         self.url = url
         self.status = status
+
+    def copy(self, other_entry):
+        self.id = other_entry.id
+        self.name = other_entry.name
+        self.location = other_entry.location
+        self.job_title = other_entry.job_title
+        self.platform = other_entry.platform
+        self.salary = other_entry.salary
+        self.experience = other_entry.experience
+        self.type = other_entry.type
+        self.url = other_entry.url
+        self.status = other_entry.status

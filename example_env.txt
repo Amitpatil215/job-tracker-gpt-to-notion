@@ -1,0 +1,8 @@
+# environment variables to be defined inside a .env file
+# The value of follwoing vrabiles are scrumblled for security reasons
+# Please add your own keys here
+
+openAiAPIKEY = 'sk-rLKiuhisvdonovsdou7w94eYXT3BlbkFJfryM8EWTI223Wr3dTObR'
+notionToken = 'secret_KWiubsdivubiubEGcBDS8i7uib0Tlp'
+jobDBdatabaseID = "d045fb49e8348h834fg4hec7sw9b"
+rawDatabaseID = "e32968c9e61wer87gerv78g7"

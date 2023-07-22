@@ -4,12 +4,22 @@ import requests
 import json
 import promts as promts
 import openai
+import traceback
+import os
 
-from entry import Entry
+from model.entry import Entry
+from model.page import Page
+from model.rawData import RawData
+from dotenv import load_dotenv
 
-openai.api_key = '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'
-token = 'secret_K0TlVmzAnjnC6JxdjX91DkJ1vGPodOv6b7XMKgWu2Ap'
-databaseID = "d045fb49e8de4e2486a2888da49d08b8"
+load_dotenv()
+
+openai.api_key =os.getenv('openAiAPIKEY')
+
+token = os.getenv('notionToken')
+jobDBdatabaseID = os.getenv('jobDBdatabaseID')
+rawDatabaseID =os.getenv('rawDatabaseID')
+
 headers = {
     "Authorization": "Bearer " + token,
     "Content-Type": "application/json",
@@ -17,50 +27,47 @@ headers = {
 }
 
 
-# create a chat completion
-chat_completion = openai.ChatCompletion.create(
-    model="gpt-3.5-turbo", messages=[{"role": "system", "content": "You are a job seeker and want to extract info from raw job description,"}, {"role": "user", "content": promts.instruction + promts.rawJobDescription},])
+def getFormatedJSONFromChatGPT(rawJobDescription, jobPostingUrl):
+    # create a chat completion
+    chat_completion = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo", messages=[{"role": "system", "content": "You are a job seeker and want to extract info from raw job description,"}, {"role": "user", "content": promts.get_promt(rawJobDescription, jobPostingUrl)},])
 
-# print the chat completion
-# print(chat_completion.choices[0].message.content)
-gptJsonResponse = chat_completion.choices[0].message.content
+    # print the chat completion
+    # print(chat_completion.choices[0].message.content)
+    gptJsonResponse = chat_completion.choices[0].message.content
 
-decodedGptJsonResponse = json.loads(gptJsonResponse)
+    decodedGptJsonResponse = json.loads(gptJsonResponse)
 
-# Accessing the parsed data
-name = decodedGptJsonResponse["name"]
-location = decodedGptJsonResponse["location"]
-job_title = decodedGptJsonResponse["job_title"]
-platform = decodedGptJsonResponse["platform"]
-salary = decodedGptJsonResponse["salary"]
-experience = decodedGptJsonResponse["experience"]
-job_type = decodedGptJsonResponse["type"]
-url = decodedGptJsonResponse["url"]
-status = decodedGptJsonResponse["status"]
+    # Accessing the parsed data
+    name = decodedGptJsonResponse["name"]
+    location = decodedGptJsonResponse["location"]
+    job_title = decodedGptJsonResponse["job_title"]
+    platform = decodedGptJsonResponse["platform"]
+    salary = decodedGptJsonResponse["salary"]
+    experience = decodedGptJsonResponse["experience"]
 
-# Printing the parsed data
-print("Name:", name)
-print("Location:", location)
-print("Job Title:", job_title)
-print("Platform:", platform)
-print("Salary:", salary)
-print("Experience:", experience)
-print("Job Type:", job_type)
-print("URL:", url)
-print("Status:", status)
+    # Printing the parsed data
+    print("Name:", name)
+    print("Location:", location)
+    print("Job Title:", job_title)
+    print("Platform:", platform)
+    print("Salary:", salary)
+    print("Experience:", experience)
 
+    entry = Entry(
+        id="",
+        name=decodedGptJsonResponse["name"],
+        location=decodedGptJsonResponse["location"],
+        job_title=decodedGptJsonResponse["job_title"],
+        platform=decodedGptJsonResponse["platform"],
+        salary=decodedGptJsonResponse["salary"],
+        experience=decodedGptJsonResponse["experience"],
+        type="",
+        url="",
+        status="New"
+    )
 
-entry = Entry(
-    name=decodedGptJsonResponse["name"],
-    location=decodedGptJsonResponse["location"],
-    job_title=decodedGptJsonResponse["job_title"],
-    platform=decodedGptJsonResponse["platform"],
-    salary=decodedGptJsonResponse["salary"],
-    experience=decodedGptJsonResponse["experience"],
-    type=decodedGptJsonResponse["type"],
-    url=decodedGptJsonResponse["url"],
-    status="New"
-)
+    return entry
 
 # Response a Database
 
@@ -71,9 +78,64 @@ def responseDatabase(databaseID, headers):
     print(res.status_code)
     print(res.text)
 
+
+def getCompleteDatabse(databaseID, headers):
+    readUrl = f"https://api.notion.com/v1/databases/{databaseID}/query"
+    filterBody = {
+        # "filter": {
+        #     # "or": [
+        #     #     {
+        #     #         "property": "In stock",
+        #     #         "checkbox": {
+        #     #             "equals": True
+        #     #         }
+        #     #     },
+        #     #     {
+        #     #         "property": "Cost of next trip",
+        #     #         "number": {
+        #     #             "greater_than_or_equal_to": 2
+        #     #         }
+        #     #     }
+        #     # ]
+        # },
+        # "sorts": [
+        #     # {
+        #     #     "property": "Last ordered",
+        #     #     "direction": "ascending"
+        #     # }
+        # ]
+    }
+    data = json.dumps(filterBody)
+    res = requests.request("POST", readUrl, headers=headers, data=data)
+    jsonDecodedPageResponse = json.loads(res.text)
+    page = Page.from_json(jsonDecodedPageResponse)
+    # List of Entries
+    listOfRowsInRawDB = []
+    for p in page:
+        pageId = p.id
+        postUrl = p.properties["URL"]["url"]
+        type = p.properties["Type"]["select"]["name"]
+        rawDataString = ""
+        rawDataList = p.properties["Raw Data"]["rich_text"]
+        for rawData in rawDataList:
+            print(rawData["text"]["content"])
+            rawDataString += rawData["text"]["content"]
+
+        rawData = RawData(
+            id=pageId,
+            url=postUrl,
+            raw_data=rawDataString,
+            type=type
+        )
+        listOfRowsInRawDB.append(rawData)
+    return listOfRowsInRawDB
 # Create a Page
 
+
 def createPage(databaseID, headers, entry):
+    print("Creating a page")
+    print(entry.__dict__)
+
     createUrl = 'https://api.notion.com/v1/pages'
     newPageData = {
         "parent": {"database_id": databaseID},
@@ -114,10 +176,22 @@ def createPage(databaseID, headers, entry):
             #         "checkbox": True
             #     },
             "Salary": {
-                "number": entry.salary
+                "rich_text": [
+                    {
+                        "text": {
+                            "content": f"{entry.salary}"
+                        },
+                    }
+                ]
             },
             "Experience": {
-                "number": 2
+                "rich_text": [
+                    {
+                        "text": {
+                            "content": f"{entry.experience}"
+                        },
+                    }
+                ]
             },
             "Type": {
                 "select": {
@@ -162,5 +236,47 @@ def createPage(databaseID, headers, entry):
     print(res.text)
 
 
-createPage(databaseID, entry=entry, headers=headers)
-# responseDatabase(databaseID, headers)
+def deletePage(pageId, headers, entry):
+    print(entry.__dict__)
+
+    createUrl = f'https://api.notion.com/v1/pages/{pageId}'
+    archivedPage = {
+        "archived": True
+    }
+    data = json.dumps(archivedPage)
+    res = requests.request("PATCH", createUrl, headers=headers, data=data)
+    print(res.status_code)
+    print(res.text)
+    print("Page Deleted")
+
+
+def execute():
+    listOfRowsInRawDB = getCompleteDatabse(rawDatabaseID, headers)
+    for row in listOfRowsInRawDB:
+        try:
+            # getting formated json from chat gpt
+            entry = getFormatedJSONFromChatGPT(
+                rawJobDescription=row.raw_data, jobPostingUrl=row.url
+            )
+            formatedEntry = Entry(
+                id=row.id,
+                name=entry.name,
+                location=entry.location,
+                job_title=entry.job_title,
+                platform=entry.platform,
+                salary=entry.salary,
+                experience=entry.experience,
+                type=row.type,
+                url=row.url,
+                status="New"
+            )
+            # Adding a new entry to the database
+            createPage(jobDBdatabaseID, entry=formatedEntry, headers=headers)
+            # Deleting the entry from raw database
+            deletePage(pageId=row.id, headers=headers, entry=formatedEntry)
+        except:
+            print("Error in parsing")
+            traceback.print_exc()
+            continue
+
+execute()
